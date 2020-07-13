@@ -9,29 +9,38 @@
 let
   lockFile = builtins.fromJSON (builtins.readFile lockFilePath);
   dependencies = lockFile.dependencies or { };
-  sources = lib.mapAttrs (_: v: pkgs.fetchurl { url = v.resolved; hash = v.integrity; }) dependencies;
+  mkSource = _: v: pkgs.fetchurl { url = v.resolved; hash = v.integrity; };
+  sources = lib.mapAttrs (mkSource) dependencies;
 
-  mkNode2NixDependency = name: dep: builtins.trace [ name dep ] ({
-    inherit name;
-    packageName = name;
-    inherit (dep) version;
-    src = sources.${name};
-    dependencies =
-      let
-        names = lib.attrNames (dep.requires or { });
-      in
-      map
-        (name:
-          if builtins.hasAttr name dependencies then
-            mkNode2NixDependency name (dependencies.${name})
-          else builtins.throw "Dependency ${name} not known")
-        names;
-  });
-  args =  {
+  mkNode2NixDependency = previous: sourcesList: name: dep: builtins.trace [ name dep ] (
+    let
+      uid = "${name}-${dep.version}";
+      dsources = lib.mapAttrs (mkSource) (dep.dependencies or { });
+    in
+    if builtins.elem uid previous then null else {
+      inherit name;
+      packageName = name;
+      inherit (dep) version;
+      src = sources.${name}; # (lib.head (lib.filter (builtins.elem name) sourcesList)).${name};
+      dependencies =
+        lib.filter (v: v != null && (builtins.hasAttr v.name dependencies && dependencies.${v.name}.version != v.version)) (
+          let
+            names = lib.attrNames (dep.requires or { });
+          in
+          map
+            (name:
+              if builtins.hasAttr name dependencies then
+                mkNode2NixDependency ([ uid ] ++ previous) ([ dsources ] ++ sourcesList) name (dependencies.${name})
+              else builtins.throw "Dependency ${name} not known")
+            names
+        );
+    }
+  );
+  args = {
     inherit (lockFile) name version;
     packageName = lockFile.name;
     src = sourcePath;
-    dependencies = lib.attrValues (lib.mapAttrs (mkNode2NixDependency) dependencies);
+    dependencies = lib.attrValues (lib.mapAttrs (mkNode2NixDependency [ ] [ sources ]) dependencies);
     bypassCache = true;
     production = true;
   };
