@@ -32,6 +32,8 @@ let
     packageName = lockFile.name;
     src = sourcePath;
     dependencies = lib.attrValues (lib.mapAttrs (mkNode2NixDependency) dependencies);
+    bypassCache = true;
+    production = true;
   };
 in
 {
