@@ -5,22 +5,23 @@
   /* required input parameters */
 , sourcePath # path to the root of the sources for this node package
 , lockFilePath ? sourcePath + "/package-lock.json" # path of the lock file
-, packageOverride ? name: spec: {},
+, packageOverride ? name: spec: { }
+,
 }:
 let
   lockFile = builtins.fromJSON (builtins.readFile lockFilePath);
   dependencies = lockFile.dependencies or { };
-  mkSource = name: v: if (v.resolved or "") == "" then null else pkgs.fetchurl { url = builtins.trace (name + " " + v.resolved) v.resolved; hash = v.integrity; };
+  mkSource = name: v: if (v.resolved or "") == "" then null else pkgs.fetchurl { url = v.resolved; hash = v.integrity; };
   sources = lib.mapAttrs (mkSource) dependencies;
 
   findBestSource = sourcesList: name:
     let
-      candidatese = lib.filter (l: builtins.hasAttr name l && builtins.trace ("'" + (l.name or "N/A") + "'") (l.${name} != "")) sourcesList;
+      candidatese = lib.filter (l: builtins.hasAttr name l && l.${name} != "") sourcesList;
       best = lib.head candidatese;
     in
     best.${name};
 
-  mkNode2NixDependency = previous: sourcesList: name: dep: builtins.trace [ name dep ] (
+  mkNode2NixDependency = previous: sourcesList: name: dep: (
     let
       uid = "${name}-${dep.version}";
       dsources = lib.mapAttrs (mkSource) (dep.dependencies or { });
