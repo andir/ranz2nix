@@ -12,6 +12,11 @@ let
   mkSource = _: v: pkgs.fetchurl { url = v.resolved; hash = v.integrity; };
   sources = lib.mapAttrs (mkSource) dependencies;
 
+  findBestSource = sourcesList: name: let
+    candidatese = lib.filter (l: builtins.hasAttr name l) sourcesList;
+    best = lib.head candidatese;
+  in best.${name};
+
   mkNode2NixDependency = previous: sourcesList: name: dep: builtins.trace [ name dep ] (
     let
       uid = "${name}-${dep.version}";
@@ -21,7 +26,7 @@ let
       inherit name;
       packageName = name;
       inherit (dep) version;
-      src = sources.${name}; # (lib.head (lib.filter (builtins.elem name) sourcesList)).${name};
+      src = findBestSource sourcesList name;
       dependencies =
         lib.filter (v: v != null && (builtins.hasAttr v.name dependencies && dependencies.${v.name}.version != v.version)) (
           let
@@ -29,8 +34,8 @@ let
           in
           map
             (name:
-              if builtins.hasAttr name dependencies then
-                mkNode2NixDependency ([ uid ] ++ previous) ([ dsources ] ++ sourcesList) name (dependencies.${name})
+              if (dep.dependencies.${name} or dependencies.${name} or null) != null then
+                mkNode2NixDependency ([ uid ] ++ previous) ([ dsources ] ++ sourcesList) name (dep.dependencies.${name} or dependencies.${name})
               else builtins.throw "Dependency ${name} not known")
             names
         );
